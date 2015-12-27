@@ -50,8 +50,8 @@ static zval *php_cjson_zval_boolean(int boolean_value);
 static zval *php_cjson_zval_number(cJSON *item);
 static zval *php_cjson_zval_string_ptr(const char *str);
 static zval *php_cjson_zval_string(cJSON *item);
-static zval *php_cjson_zval_array(cJSON *item, int depth);
-static zval *php_cjson_zval_object(cJSON *item, int depth);
+static zval *php_cjson_zval_array(cJSON *item, int depth TSRMLS_DC);
+static zval *php_cjson_zval_object(cJSON *item, int depth TSRMLS_DC);
 static zval *php_cjson_decode(cJSON *item, int depth TSRMLS_DC);
 
 PHP_FUNCTION(cjson_encode);
@@ -418,7 +418,7 @@ static zval *php_cjson_zval_string(cJSON *item)
 	return php_cjson_zval_string_ptr(item->valuestring);
 }
 
-static zval *php_cjson_zval_array(cJSON *item, int depth)
+static zval *php_cjson_zval_array(cJSON *item, int depth TSRMLS_DC)
 {
 	zval *copy; zval *ret;
 	MAKE_STD_ZVAL(copy);
@@ -449,7 +449,7 @@ static zval *php_cjson_zval_array(cJSON *item, int depth)
 	return copy;	
 }
 
-static zval *php_cjson_zval_object(cJSON *item, int depth)
+static zval *php_cjson_zval_object(cJSON *item, int depth TSRMLS_DC)
 {
 	zval *copy; zval *ret;
 	MAKE_STD_ZVAL(copy);
