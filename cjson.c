@@ -490,8 +490,8 @@ static zval *php_cjson_decode(cJSON *item, int depth TSRMLS_DC)
 		case cJSON_True:	out=php_cjson_zval_boolean(1); break;
 		case cJSON_Number:	out=php_cjson_zval_number(item);break;
 		case cJSON_String:	out=php_cjson_zval_string(item);break;
-		case cJSON_Array:	out=php_cjson_zval_array(item,depth);break;
-		case cJSON_Object:	out=php_cjson_zval_object(item,depth);break;
+		case cJSON_Array:	out=php_cjson_zval_array(item,depth TSRMLS_CC);break;
+		case cJSON_Object:	out=php_cjson_zval_object(item,depth TSRMLS_CC);break;
 	}
 
 	return out;
