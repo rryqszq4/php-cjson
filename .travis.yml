@@ -1,0 +1,16 @@
+language: php
+php:
+  - 5.3
+  - 5.4
+  - 5.5
+  - 5.6
+
+notifications:
+  email: memwared@gmail.com
+
+env:
+  - REPORT_EXIT_STATUS=1 NO_INTERACTION=1
+
+before_script: phpize && ./configure && make
+
+script: make test
