@@ -440,7 +440,7 @@ static zval *php_cjson_zval_array(cJSON *item, int depth)
 	child=item->child;
 	while (child)
 	{
-		ret=php_cjson_decode(child,depth+1);
+		ret=php_cjson_decode(child,depth+1 TSRMLS_CC);
 		add_next_index_zval(copy, ret);
 
 		child=child->next;
@@ -469,7 +469,7 @@ static zval *php_cjson_zval_object(cJSON *item, int depth)
 	child=item->child;depth++;
 	while (child)
 	{
-		ret=php_cjson_decode(child,depth+1);
+		ret=php_cjson_decode(child,depth+1 TSRMLS_CC);
 		add_assoc_zval(copy, child->string, ret);
 		child=child->next;
 	}
@@ -480,7 +480,7 @@ static zval *php_cjson_zval_object(cJSON *item, int depth)
 static zval *php_cjson_decode(cJSON *item, int depth TSRMLS_DC)
 {
 	zval *out=NULL;
-	
+
 	if (!item) {ZVAL_NULL(out); return out;}
 	
 	switch ((item->type)&255)
@@ -541,7 +541,6 @@ PHP_FUNCTION(cjson_decode)
 	}
 
 	cJSON_Delete(json);
-
 
 }
 
