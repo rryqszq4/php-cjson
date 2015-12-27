@@ -13,9 +13,9 @@ dnl [  --with-cjson             Include cjson support])
 
 dnl Otherwise use enable:
 
-dnl PHP_ARG_ENABLE(cjson, whether to enable cjson support,
-dnl Make sure that the comment is aligned:
-dnl [  --enable-cjson           Enable cjson support])
+PHP_ARG_ENABLE(cjson, whether to enable cjson support,
+Make sure that the comment is aligned:
+[  --enable-cjson           Enable cjson support])
 
 if test "$PHP_CJSON" != "no"; then
   dnl Write more examples of tests here...
@@ -59,5 +59,5 @@ if test "$PHP_CJSON" != "no"; then
   dnl
   dnl PHP_SUBST(CJSON_SHARED_LIBADD)
 
-  PHP_NEW_EXTENSION(cjson, cjson.c, $ext_shared)
+  PHP_NEW_EXTENSION(cjson, cjson.c cJSON/cJSON.c, $ext_shared)
 fi
