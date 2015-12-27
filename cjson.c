@@ -26,6 +26,7 @@
 #include "php_ini.h"
 #include "ext/standard/info.h"
 #include "php_cjson.h"
+#include <float.h>
 #include "cJSON/cJSON.h"
 
 /* If you declare any globals in php_cjson.h uncomment this:
@@ -44,11 +45,24 @@ static int cjson_determine_array_type(zval **val TSRMLS_DC);
 static cJSON *php_cjson_encode_array(zval *val TSRMLS_DC);
 static cJSON *php_cjson_encode(zval *val TSRMLS_DC);
 
+static zval *php_cjson_zval_null();
+static zval *php_cjson_zval_boolean(int boolean_value);
+static zval *php_cjson_zval_number(cJSON *item);
+static zval *php_cjson_zval_string_ptr(const char *str);
+static zval *php_cjson_zval_string(cJSON *item);
+static zval *php_cjson_zval_array(cJSON *item, int depth);
+static zval *php_cjson_zval_object(cJSON *item, int depth);
+static zval *php_cjson_decode(cJSON *item, int depth TSRMLS_DC);
+
 PHP_FUNCTION(cjson_encode);
 PHP_FUNCTION(cjson_decode);
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_cjson_encode, 0, 0, 1)
 	ZEND_ARG_INFO(0, value)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_cjson_decode, 0, 0, 1)
+	ZEND_ARG_INFO(0, str)
 ZEND_END_ARG_INFO()
 
 /* {{{ cjson_functions[]
@@ -58,7 +72,7 @@ ZEND_END_ARG_INFO()
 const zend_function_entry cjson_functions[] = {
 	PHP_FE(confirm_cjson_compiled,	NULL)		/* For testing, remove later. */
 	PHP_FE(cjson_encode, arginfo_cjson_encode)
-	PHP_FE(cjson_decode, NULL)
+	PHP_FE(cjson_decode, arginfo_cjson_decode)
 	PHP_FE_END	/* Must be the last line in cjson_functions[] */
 };
 /* }}} */
@@ -342,6 +356,147 @@ static cJSON *php_cjson_encode(zval *val TSRMLS_DC)
 	return root;
 }
 
+static zval *php_cjson_zval_null()
+{
+	zval *copy;
+
+	MAKE_STD_ZVAL(copy);
+	ZVAL_NULL(copy);
+	
+	return copy;
+}
+
+static zval *php_cjson_zval_boolean(int boolean_value)
+{
+	zval *copy;
+
+	MAKE_STD_ZVAL(copy);
+	ZVAL_BOOL(copy, boolean_value);
+
+	return copy;
+}
+
+static zval *php_cjson_zval_number(cJSON *item)
+{
+	char *str=0;
+	zval *copy;
+
+	MAKE_STD_ZVAL(copy);
+
+	double d=item->valuedouble;
+	if (d==0)
+	{
+		ZVAL_STRINGL(copy, "0", sizeof("0") - 1, 0);
+	}
+	else if (fabs(((double)item->valueint)-d)<=DBL_EPSILON && d<=INT_MAX && d>=INT_MIN)
+	{
+		ZVAL_LONG(copy, item->valueint);
+	}
+	else
+	{
+		
+		if (fabs(floor(d)-d)<=DBL_EPSILON && fabs(d)<1.0e60) {ZVAL_DOUBLE(copy, d);}
+		else if (fabs(d)<1.0e-6 || fabs(d)>1.0e9)			 {ZVAL_DOUBLE(copy, d);}
+		else												 {ZVAL_DOUBLE(copy, d);}
+	}
+	return copy;
+}
+
+static zval *php_cjson_zval_string_ptr(const char *str)
+{
+	zval *copy;
+
+	MAKE_STD_ZVAL(copy);
+
+	ZVAL_STRINGL(copy, str, strlen(str), 1);
+
+	return copy;
+}
+
+static zval *php_cjson_zval_string(cJSON *item)
+{
+	return php_cjson_zval_string_ptr(item->valuestring);
+}
+
+static zval *php_cjson_zval_array(cJSON *item, int depth)
+{
+	zval *copy; zval *ret;
+	MAKE_STD_ZVAL(copy);
+	array_init(copy);
+
+	cJSON *child=item->child;
+	int numentries=0;
+	
+	/* How many entries in the array? */
+	while (child) numentries++,child=child->next;
+	/* Explicitly handle numentries==0 */
+	if (!numentries)
+	{
+		return copy;
+	}
+
+	
+	/* Retrieve all the results: */
+	child=item->child;
+	while (child)
+	{
+		ret=php_cjson_decode(child,depth+1);
+		add_next_index_zval(copy, ret);
+
+		child=child->next;
+	}
+
+	return copy;	
+}
+
+static zval *php_cjson_zval_object(cJSON *item, int depth)
+{
+	zval *copy; zval *ret;
+	MAKE_STD_ZVAL(copy);
+	array_init(copy);
+
+	cJSON *child=item->child;
+	int numentries=0;
+	/* Count the number of entries. */
+	while (child) numentries++,child=child->next;
+	/* Explicitly handle empty object case */
+	if (!numentries)
+	{
+		return copy;
+	}
+
+	/* Collect all the results into our arrays: */
+	child=item->child;depth++;
+	while (child)
+	{
+		ret=php_cjson_decode(child,depth+1);
+		add_assoc_zval(copy, child->string, ret);
+		child=child->next;
+	}
+		
+	return copy;	
+}
+
+static zval *php_cjson_decode(cJSON *item, int depth TSRMLS_DC)
+{
+	zval *out=NULL;
+	
+	if (!item) {ZVAL_NULL(out); return out;}
+	
+	switch ((item->type)&255)
+	{
+		case cJSON_NULL:	out=php_cjson_zval_null();	break;
+		case cJSON_False:	out=php_cjson_zval_boolean(0);break;
+		case cJSON_True:	out=php_cjson_zval_boolean(1); break;
+		case cJSON_Number:	out=php_cjson_zval_number(item);break;
+		case cJSON_String:	out=php_cjson_zval_string(item);break;
+		case cJSON_Array:	out=php_cjson_zval_array(item,depth);break;
+		case cJSON_Object:	out=php_cjson_zval_object(item,depth);break;
+	}
+
+	return out;
+}
+
 PHP_FUNCTION(cjson_encode)
 {
 	zval *param;
@@ -358,7 +513,7 @@ PHP_FUNCTION(cjson_encode)
     buf=cJSON_Print(root);
     cJSON_Delete(root);
 
-    ZVAL_STRINGL(return_value, buf, strlen(buf)-1, 1);
+    ZVAL_STRINGL(return_value, buf, strlen(buf), 1);
 
     //printf("%s\n",buf);
     free(buf);
@@ -367,6 +522,26 @@ PHP_FUNCTION(cjson_encode)
 
 PHP_FUNCTION(cjson_decode)
 {
+	char *str;
+	int str_len;
+	cJSON *json;
+	zval *node;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &str, &str_len) == FAILURE)
+	{
+		return ;
+	}
+
+	json = cJSON_Parse(str);
+	if (!json) {printf("Error before: [%s]\n",cJSON_GetErrorPtr());}
+	else
+	{
+		node = php_cjson_decode(json, 1 TSRMLS_CC);
+		RETVAL_ZVAL(node, 1, 0);
+	}
+
+	cJSON_Delete(json);
+
 
 }
 
