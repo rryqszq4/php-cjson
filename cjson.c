@@ -53,6 +53,7 @@ static zval *php_cjson_zval_string(cJSON *item);
 static zval *php_cjson_zval_array(cJSON *item, int depth TSRMLS_DC);
 static zval *php_cjson_zval_object(cJSON *item, int depth TSRMLS_DC);
 static zval *php_cjson_decode(cJSON *item, int depth TSRMLS_DC);
+static void php_cjson_decode_return(zval *return_value, cJSON *item, int depth TSRMLS_DC);
 
 PHP_FUNCTION(cjson_encode);
 PHP_FUNCTION(cjson_decode);
@@ -203,6 +204,60 @@ PHP_FUNCTION(confirm_cjson_compiled)
    function definition, where the functions purpose is also documented. Please 
    follow this convention for the convenience of others editing your code.
 */
+
+static char* cjson_return_zval_type(zend_uchar type)
+{
+  switch (type) {
+    case IS_NULL:
+      return "IS_NULL";
+      break;
+    case IS_BOOL:
+      return "IS_BOOL";
+      break;
+    case IS_LONG:
+      return "IS_LONG";
+      break;
+    case IS_DOUBLE:
+      return "IS_DOUBLE";
+      break;
+    case IS_STRING:
+      return "IS_STRING";
+      break;
+    case IS_ARRAY:
+      return "IS_ARRAY";
+      break;
+    case IS_OBJECT:
+      return "IS_OBJECT";
+      break;
+    case IS_RESOURCE:
+      return "IS_RESOURCE";
+      break;
+    default :
+      return "unknown";
+  }
+}
+
+void cjson_dump_zval(zval *data)
+{
+  php_printf("zval<%p> {\n", data);
+  php_printf("  refcount__gc -> %d\n", data->refcount__gc);
+  php_printf("  is_ref__gc -> %d\n", data->is_ref__gc);
+  php_printf("  type -> %s\n", cjson_return_zval_type(data->type));
+  php_printf("  zand_value<%p> {\n", data->value);
+
+  php_printf("    lval -> %d\n", data->value.lval);
+  php_printf("    dval -> %e\n", data->value.dval);
+  if (Z_TYPE_P(data) == IS_STRING){
+    php_printf("    str -> %s\n", Z_STRVAL_P(data));
+  }
+  php_printf("    *ht<%p> {\n", data->value.ht);
+  php_printf("    }\n");
+  php_printf("    obj<%p> {\n", data->value.obj);
+  php_printf("    }\n");
+  php_printf("  }\n");
+
+  php_printf("}\n");
+}
 
 static int cjson_determine_array_type(zval **val TSRMLS_DC)
 {
@@ -497,6 +552,99 @@ static zval *php_cjson_decode(cJSON *item, int depth TSRMLS_DC)
 	return out;
 }
 
+static void php_cjson_decode_return(zval *return_value, cJSON *item, int depth TSRMLS_DC)
+{
+	double d;
+	zval *ret;
+	cJSON *child;
+	int numentries;
+
+	if (!item)
+	{
+		ZVAL_NULL(return_value);
+		return ;
+	}
+
+	switch ((item->type)&255)
+	{
+		case cJSON_NULL:
+				ZVAL_NULL(return_value);
+			break;
+		case cJSON_False:
+				ZVAL_BOOL(return_value, 0);
+			break;
+		case cJSON_True:
+				ZVAL_BOOL(return_value, 1);
+			break;
+		case cJSON_Number:
+				d=item->valuedouble;
+				if (d==0)
+				{
+					ZVAL_STRINGL(return_value, "0", sizeof("0") - 1, 0);
+				}
+				else if (fabs(((double)item->valueint)-d)<=DBL_EPSILON && d<=INT_MAX && d>=INT_MIN)
+				{
+					ZVAL_LONG(return_value, item->valueint);
+				}
+				else
+				{
+					if (fabs(floor(d)-d)<=DBL_EPSILON && fabs(d)<1.0e60) {ZVAL_DOUBLE(return_value, d);}
+					else if (fabs(d)<1.0e-6 || fabs(d)>1.0e9)			 {ZVAL_DOUBLE(return_value, d);}
+					else												 {ZVAL_DOUBLE(return_value, d);}
+				}
+			break;
+		case cJSON_String:
+				ZVAL_STRINGL(return_value, item->valuestring, strlen(item->valuestring), 1);
+			break;
+		case cJSON_Array:
+				array_init(return_value);
+				child=item->child;
+				numentries=0;
+				
+				/* How many entries in the array? */
+				while (child) numentries++,child=child->next;
+				/* Explicitly handle numentries==0 */
+				if (!numentries)
+				{
+					return ;
+				}
+
+				/* Retrieve all the results: */
+				child=item->child;
+				while (child)
+				{
+					ret=php_cjson_decode(child,depth+1 TSRMLS_CC);
+					add_next_index_zval(return_value, ret);
+
+					child=child->next;
+				}
+			break;
+		case cJSON_Object:
+				array_init(return_value);
+				child=item->child;
+				numentries=0;
+				/* Count the number of entries. */
+				while (child) numentries++,child=child->next;
+				/* Explicitly handle empty object case */
+				if (!numentries)
+				{
+					return ;
+				}
+
+				/* Collect all the results into our arrays: */
+				child=item->child;depth++;
+				while (child)
+				{
+					ret=php_cjson_decode(child,depth+1 TSRMLS_CC);
+					add_assoc_zval(return_value, child->string, ret);
+					child=child->next;
+				}
+			break;
+	}
+
+	return ;
+}
+
 PHP_FUNCTION(cjson_encode)
 {
 	zval *param;
@@ -524,24 +672,26 @@ PHP_FUNCTION(cjson_decode)
 {
 	char *str;
 	int str_len;
-	cJSON *json;
-	zval *node;
+	cJSON *item;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &str, &str_len) == FAILURE)
 	{
 		return ;
 	}
 
-	json = cJSON_Parse(str);
-	if (!json) {printf("Error before: [%s]\n",cJSON_GetErrorPtr());}
+	item = cJSON_Parse(str);
+	if (!item) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error before: [%s]", cJSON_GetErrorPtr());
+		ZVAL_NULL(return_value);
+	}
 	else
 	{
-		node = php_cjson_decode(json, 1 TSRMLS_CC);
-		RETVAL_ZVAL(node, 1, 0);
+		php_cjson_decode_return(return_value, item, 1 TSRMLS_CC);
 	}
 
-	cJSON_Delete(json);
+	cJSON_Delete(item);
 
+	return ;
 }
 
 /*
