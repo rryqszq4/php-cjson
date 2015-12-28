@@ -17,7 +17,7 @@ Example
 -------
 **encode**
 ```php
-
+<?php
 $arr = array(
 	1,
 	"string",
@@ -28,11 +28,12 @@ var_dump(cjson_encode($arr));
 /* ==>output
 string(28) "[1,"string",{"key":"value"}]";
 */
-
+?>
 ```
 
 **decode**
 ```php
+<?php
 $str = '[1,"string",{"key":"value"}]';
 var_dump(cjson_decode($str));
 
@@ -49,6 +50,6 @@ array(3) {
   }
 }
 */
-
+?>
 ```
 
