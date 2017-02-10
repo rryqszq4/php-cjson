@@ -1,6 +1,6 @@
 php-cjson
 ===========
-[![Build Status](https://travis-ci.org/rryqszq4/php-ext-cjson.svg?branch=master)](https://travis-ci.org/rryqszq4/php-ext-cjson)
+[![Build Status](https://travis-ci.org/rryqszq4/php-cjson.svg?branch=master)](https://travis-ci.org/rryqszq4/php-cjson)
 
 The php-cjson is a fast JSON parsing and encoding support for PHP extension.
 
